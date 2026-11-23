@@ -1,0 +1,57 @@
+# Nâsır el-Katâmî kıraatini ayet ayet indirip sure sure birleştirir (64 kbps mono MP3), ses/NNN.mp3 olarak depoya yazar.
+name: Radyo seslerini üret
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "İlk sure numarası"
+        required: true
+        default: "9"
+      to:
+        description: "Son sure numarası"
+        required: true
+        default: "114"
+permissions:
+  contents: write
+jobs:
+  uret:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Üret
+        env:
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          set -euo pipefail
+          git config user.name "Hayya Radyo"
+          git config user.email "noreply@github.com"
+          COUNTS=(7 286 200 176 120 165 206 75 129 109 123 111 43 52 99 128 111 110 98 135 112 78 118 64 77 227 93 88 69 60 34 30 73 54 45 83 182 88 75 85 54 53 89 59 37 35 38 29 18 45 60 49 62 55 78 96 29 22 24 13 14 11 11 18 12 12 30 52 52 44 28 28 20 56 40 31 50 40 46 42 29 19 36 25 22 17 19 26 30 20 15 21 11 8 8 19 5 8 8 11 11 8 3 9 5 4 7 3 6 3 5 4 5 6)
+          total=0; for c in "${COUNTS[@]}"; do total=$((total+c)); done
+          [ "$total" = "6236" ] || { echo "ayet sayısı tutmuyor: $total"; exit 1; }
+          BASE="https://everyayah.com/data/Nasser_Alqatami_128kbps"
+          mkdir -p ses work
+          touch ses/sureler.csv
+          n=0
+          for s in $(seq "$FROM" "$TO"); do
+            p=$(printf "%03d" "$s"); cnt=${COUNTS[$((s-1))]}
+            rm -rf work/*; mkdir -p work/a
+            : > work/list.txt
+            seq 1 "$cnt" | xargs -P 8 -I{} sh -c 'a=$(printf "%03d" {}); curl -fsS --retry 6 --retry-delay 2 -o work/a/'"$p"'$a.mp3 '"$BASE"'/'"$p"'$a.mp3'
+            if [ "$s" != "1" ] && [ "$s" != "9" ]; then
+              curl -fsS --retry 6 --retry-delay 2 -o work/a/bismillah.mp3 "$BASE/001001.mp3"
+              echo "file 'a/bismillah.mp3'" >> work/list.txt
+            fi
+            for a in $(seq 1 "$cnt"); do echo "file 'a/${p}$(printf "%03d" "$a").mp3'" >> work/list.txt; done
+            ffmpeg -v error -y -f concat -safe 0 -i work/list.txt -ac 1 -ar 44100 -c:a libmp3lame -b:a 64k "ses/$p.mp3"
+            dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "ses/$p.mp3")
+            grep -v "^$s," ses/sureler.csv > ses/sureler.tmp || true; mv ses/sureler.tmp ses/sureler.csv
+            echo "$s,$dur" >> ses/sureler.csv
+            echo "sure $s ok ($cnt ayet, $dur sn)"
+            n=$((n+1))
+            if [ $((n % 12)) -eq 0 ]; then
+              git add ses; git commit -qm "Radyo sesleri (sure $s'e kadar)"; git push -q
+            fi
+          done
+          git add ses; git commit -qm "Radyo sesleri tamamlandı" || true; git push -q

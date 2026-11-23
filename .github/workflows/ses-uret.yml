@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+      - name: ffmpeg kur
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Üret
         env:
           FROM: ${{ inputs.from }}
